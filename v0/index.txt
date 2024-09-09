@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>WebSocket Chat with Rooms</title>
+		<style>
+			#chat-box {
+				width: 100%;
+				height: 300px;
+				border: 1px solid #ccc;
+				padding: 10px;
+				overflow-y: auto;
+				margin-bottom: 10px;
+			}
+			#messageInput {
+				width: calc(100% - 100px);
+				padding: 8px;
+			}
+			#sendButton {
+				padding: 8px 20px;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>WebSocket Chat with Rooms</h1>
+
+		<div>
+			<label for="roomInput">Введите название комнаты:</label>
+			<input id="roomInput" type="text" placeholder="Название комнаты..." />
+			<button onclick="joinRoom()">Присоединиться к комнате</button>
+		</div>
+
+		<div id="chat-box"></div>
+
+		<form id="chatForm" style="display: none">
+			<input id="messageInput" type="text" placeholder="Введите сообщение..." />
+			<button id="sendButton" type="submit">Отправить</button>
+		</form>
+
+		<script>
+			let socket;
+			let room;
+
+			function joinRoom() {
+				room = document.getElementById('roomInput').value;
+				if (!room) {
+					alert('Введите название комнаты!');
+					return;
+				}
+
+				socket = new WebSocket('ws://localhost:8080/ws');
+
+				socket.onopen = function () {
+					// Отправляем название комнаты на сервер
+					socket.send(room);
+
+					document.getElementById('chatForm').style.display = 'block';
+					console.log(`Присоединились к комнате: ${room}`);
+				};
+
+				socket.onmessage = function (event) {
+					let chatBox = document.getElementById('chat-box');
+					let message = document.createElement('div');
+					message.textContent = event.data;
+					chatBox.appendChild(message);
+					chatBox.scrollTop = chatBox.scrollHeight; // Прокрутка вниз
+				};
+
+				socket.onclose = function (event) {
+					console.log('Соединение закрыто');
+				};
+
+				socket.onerror = function (error) {
+					console.log(`Ошибка: ${error.message}`);
+				};
+			}
+
+			document
+				.getElementById('chatForm')
+				.addEventListener('submit', function (event) {
+					event.preventDefault();
+					let input = document.getElementById('messageInput');
+
+					if (input.value) {
+						socket.send(input.value);
+						input.value = '';
+					}
+				});
+		</script>
+	</body>
+</html>

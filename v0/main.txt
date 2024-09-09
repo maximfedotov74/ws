@@ -1,0 +1,131 @@
+package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+	"sync"
+
+	"github.com/gorilla/websocket"
+)
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Разрешаем соединения с любых источников
+	},
+}
+
+// Структура клиента
+type Client struct {
+	conn *websocket.Conn
+	room string
+}
+
+// Карта комнат и клиентов, использующих их
+var rooms = make(map[string]map[*Client]bool)
+
+// Канал для передачи сообщений
+var broadcast = make(chan Message)
+
+var mutex = sync.Mutex{}
+
+// Структура для передачи сообщений
+type Message struct {
+	data []byte
+	room string
+}
+
+// Обработчик WebSocket соединений
+func handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println("Ошибка обновления до WebSocket:", err)
+		return
+	}
+	defer conn.Close()
+
+	// Чтение первой команды от клиента, чтобы выбрать комнату
+	_, room, err := conn.ReadMessage()
+	if err != nil {
+		log.Println("Ошибка чтения сообщения:", err)
+		return
+	}
+
+	client := &Client{
+		conn: conn,
+		room: string(room),
+	}
+
+	// Добавляем клиента в комнату
+	mutex.Lock()
+	if rooms[client.room] == nil {
+		rooms[client.room] = make(map[*Client]bool)
+	}
+	rooms[client.room][client] = true
+	mutex.Unlock()
+
+	// Чтение сообщений от клиента
+	for {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			log.Println("Ошибка чтения сообщения:", err)
+			mutex.Lock()
+			delete(rooms[client.room], client)
+			if len(rooms[client.room]) == 0 {
+				delete(rooms, client.room)
+			}
+			mutex.Unlock()
+			break
+		}
+
+		// Отправляем сообщение в соответствующую комнату
+		broadcast <- Message{data: message, room: client.room}
+	}
+}
+
+// Горутина для рассылки сообщений по комнатам
+func handleMessages() {
+	for {
+		// Получаем сообщение из канала
+		msg := <-broadcast
+
+		// Рассылаем сообщение всем клиентам в комнате
+		mutex.Lock()
+		for client := range rooms[msg.room] {
+			err := client.conn.WriteMessage(websocket.TextMessage, msg.data)
+			if err != nil {
+				log.Printf("Ошибка отправки сообщения клиенту: %v", err)
+				client.conn.Close()
+				delete(rooms[msg.room], client)
+				if len(rooms[msg.room]) == 0 {
+					delete(rooms, msg.room)
+				}
+			}
+		}
+		mutex.Unlock()
+	}
+}
+
+// Обработчик для отдачи HTML страницы
+func serveHome(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+	http.ServeFile(w, r, "index.html")
+}
+
+func main() {
+	// Обработчик для WebSocket
+	http.HandleFunc("/ws", handleWebSocket)
+
+	// Обработчик для HTML страницы
+	http.HandleFunc("/", serveHome)
+
+	// Запуск горутины для обработки сообщений
+	go handleMessages()
+
+	// Запуск HTTP сервера
+	fmt.Println("Сервер запущен на :8080")
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		log.Fatal("Ошибка запуска сервера:", err)
+	}
+}

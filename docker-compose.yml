@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  db:
+    container_name: ws-chat
+    restart: always
+    env_file:
+      - .env
+    image: postgres:14.9-alpine
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_INITDB_ARGS=--lc-collate=ru_RU.UTF-8 --lc-ctype=ru_RU.UTF-8
+      - POSTGRES_PASSWORD=maxim
+      - POSTGRES_USER=admin
+      - POSTGRES_DB=chat
+    ports:
+      - 5432:5432

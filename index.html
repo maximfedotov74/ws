@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>WebSocket Chat with Rooms and Users</title>
+		<style>
+			#chat-box {
+				width: 100%;
+				height: 300px;
+				border: 1px solid #ccc;
+				padding: 10px;
+				overflow-y: auto;
+				margin-bottom: 10px;
+			}
+			#messageInput {
+				width: calc(100% - 100px);
+			}
+		</style>
+	</head>
+	<body>
+		<h1>WebSocket Chat with Rooms</h1>
+
+		<div>
+			<label for="roomSelect">Комната:</label>
+			<select id="roomSelect"></select>
+
+			<label for="usernameInput">Имя пользователя:</label>
+			<input id="usernameInput" type="text" placeholder="Введите имя" />
+			<button id="connectBtn" onclick="connectToRoom()">Подключиться</button>
+		</div>
+
+		<div id="chat-box"></div>
+
+		<div>
+			<input id="messageInput" type="text" placeholder="Введите сообщение" />
+			<button onclick="sendMessage()">Отправить</button>
+		</div>
+
+		<script>
+			let socket;
+			let roomName;
+			let username;
+
+			document.addEventListener('DOMContentLoaded', () => {
+				// Загрузка комнат с сервера
+				fetch('/rooms')
+					.then(response => response.json())
+					.then(rooms => {
+						const roomSelect = document.getElementById('roomSelect');
+						rooms.forEach(room => {
+							const option = document.createElement('option');
+							option.value = room.Name;
+							option.textContent = room.Name;
+							roomSelect.appendChild(option);
+						});
+					});
+			});
+
+			function connectToRoom() {
+				roomName = document.getElementById('roomSelect').value;
+				username = document.getElementById('usernameInput').value;
+
+				if (!roomName || !username) {
+					alert('Введите имя пользователя и выберите комнату');
+					return;
+				}
+
+				// Подключаемся к WebSocket серверу
+				socket = new WebSocket('ws://localhost:8080/ws');
+
+				socket.onopen = function () {
+					// Отправляем имя пользователя и комнату при подключении
+					socket.send(JSON.stringify({ room: roomName, username: username }));
+
+					// Загружаем старые сообщения
+					fetch(`/messages?room=${roomName}`)
+						.then(response => response.json())
+						.then(messages => {
+							const chatBox = document.getElementById('chat-box');
+							chatBox.innerHTML = ''; // Очищаем предыдущие сообщения
+							messages.forEach(message => {
+								const msgDiv = document.createElement('div');
+								msgDiv.textContent = `${message.User.Username}: ${message.Content}`;
+								chatBox.appendChild(msgDiv);
+							});
+						});
+				};
+
+				socket.onmessage = function (event) {
+					const chatBox = document.getElementById('chat-box');
+					const msgDiv = document.createElement('div');
+					msgDiv.textContent = event.data;
+					chatBox.appendChild(msgDiv);
+				};
+
+				socket.onclose = function () {
+					console.log('Соединение закрыто');
+				};
+			}
+
+			function sendMessage() {
+				const messageInput = document.getElementById('messageInput');
+				const message = messageInput.value;
+				if (message && socket) {
+					socket.send(message);
+					messageInput.value = '';
+				}
+			}
+		</script>
+	</body>
+</html>
